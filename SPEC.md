@@ -16,7 +16,7 @@ Build the first vertical slice of **Foundry**: an AI consultancy platform where 
 
 - As a solo founder, I submit a prompt (idea, decision, critique request) and get routed to the Founder agent when it’s a strategy/idea/co-founder conversation.
 - As a solo founder, I get a direct, opinionated response that can cite research when claims need grounding.
-- As a builder, I can run the workflow from a CLI with env-configured API keys and see traces in LangSmith.
+- As a builder, I can run the workflow from a CLI with ChatGPT plan usage (`foundry login`) or env-configured API keys, and see traces in LangSmith.
 
 ### Success criteria
 
@@ -83,7 +83,8 @@ foundry-hackathon/
 │   ├── api.py                 # FastAPI app
 │   ├── cli.py                 # CLI entrypoint
 │   ├── config.py              # env settings
-│   ├── llm.py                 # provider-agnostic chat model factory
+│   ├── llm.py                 # provider-agnostic chat model factory (API key or ChatGPT OAuth)
+│   ├── chatgpt_auth/          # Sign in with ChatGPT (PKCE + plan usage → Responses API)
 │   ├── state.py               # shared LangGraph state (+ future user_context)
 │   ├── graph.py               # StateGraph: categorize → route → founder|unsupported
 │   ├── agents/
@@ -181,7 +182,7 @@ LangSmith remains the trace UI; Supabase is analytics/logs for the product.
 
 ## Decisions (locked)
 
-1. **LLM:** OpenAI by default (user subscription); factory is provider-agnostic (`provider:model`) so models can change without rewriting agents.
+1. **LLM:** OpenAI by default via Sign in with ChatGPT plan usage (OAuth + Responses API) when signed in; `OPENAI_API_KEY` remains a fallback. Factory is provider-agnostic (`provider:model`).
 2. **Research:** Default is Perplexity-like answer-only research (Perplexity Sonar API). Pluggable provider interface for future user-connected apps. Agent gets the answer, not a search workflow.
 3. **Invocation:** FastAPI is the primary interface; CLI remains for local smoke tests.
 4. **User context / brain:** Persistent company brain is planned separately. v0 leaves an optional `user_context` field in state but does not implement the brain.

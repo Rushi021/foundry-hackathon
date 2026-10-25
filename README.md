@@ -27,8 +27,25 @@ See [SPEC.md](./SPEC.md) for the full contract.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env   # add OPENAI_API_KEY, optional PERPLEXITY_API_KEY / Supabase / LangSmith
+cp .env.example .env   # optional PERPLEXITY_API_KEY / Supabase / LangSmith
 ```
+
+### LLM billing (ChatGPT plan or API key)
+
+Prefer **Sign in with ChatGPT** so eligible Responses API calls use your ChatGPT
+subscription instead of a separate API key ([OpenAI docs](https://developers.openai.com/siwc/token-sharing-open-source)):
+
+```bash
+foundry login          # browser OAuth + plan-usage consent
+foundry auth           # confirm plan_usage: true
+foundry models         # slugs available to your account
+# optional: set CATEGORIZE_LLM / FOUNDER_LLM to those slugs in .env
+```
+
+Credentials live in `~/.config/foundry/` (mode `0600`). Manage connected apps and
+limits in **ChatGPT → Settings → Usage**.
+
+Fallback: set `OPENAI_API_KEY`, or force API billing with `FOUNDRY_LLM_BILLING=api_key`.
 
 ## Run
 
@@ -54,7 +71,8 @@ curl -s http://localhost:8000/v1/workflows/run \
   -d '{"prompt":"Should I build an AI co-founder for solo founders?"}'
 
 # CLI (live steps by default; --quiet to hide them)
-python -m foundry.cli "Should I build an AI co-founder for solo founders?"
+foundry run "Should I build an AI co-founder for solo founders?"
+# same as: python -m foundry "…"
 ```
 
 ## Tests

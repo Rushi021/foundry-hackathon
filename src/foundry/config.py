@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     # LLM: "provider:model" — swap without code changes
     categorize_llm: str = "openai:gpt-4o-mini"
     founder_llm: str = "openai:gpt-4o"
+    # auto | chatgpt | api_key — prefer Sign in with ChatGPT plan usage when signed in
+    foundry_llm_billing: str = "auto"
 
     # Research
     research_provider: str = "perplexity"
