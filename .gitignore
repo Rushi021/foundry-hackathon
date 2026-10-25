@@ -1,0 +1,27 @@
+# Upstream clone (sync into .cursor/skills/; do not vendor)
+agent-skills/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies / build (common)
+node_modules/
+dist/
+build/
+coverage/
+*.log
+.venv/
+__pycache__/
+*.pyc
