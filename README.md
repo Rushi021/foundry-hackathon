@@ -32,16 +32,28 @@ cp .env.example .env   # add OPENAI_API_KEY, optional PERPLEXITY_API_KEY / Supab
 
 ## Run
 
+Live per-step status prints to the terminal (CLI and API server) so you can verify
+each node before Supabase logging is finalized:
+
+```text
+[foundry:abcd1234] ▶ run.start | prompt=...
+[foundry:abcd1234] ▶ categorize.start | model=openai:gpt-4o-mini
+[foundry:abcd1234] ▶ categorize.decision | route=founder | confidence=0.9 | ...
+[foundry:abcd1234] ▶ founder.start | ...
+[foundry:abcd1234] ▶ research.start | query=...
+[foundry:abcd1234] ▶ founder.response | response=...
+[foundry:abcd1234] ▶ run.complete | ...
+```
+
 ```bash
-# API (primary)
+# API (primary) — watch the uvicorn terminal for step stream
 uvicorn foundry.api:app --reload --port 8000
 
-# Example
 curl -s http://localhost:8000/v1/workflows/run \
   -H 'content-type: application/json' \
   -d '{"prompt":"Should I build an AI co-founder for solo founders?"}'
 
-# CLI
+# CLI (live steps by default; --quiet to hide them)
 python -m foundry.cli "Should I build an AI co-founder for solo founders?"
 ```
 

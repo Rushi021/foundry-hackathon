@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from foundry.progress import emit
 from foundry.state import FUTURE_AGENTS, WorkflowState
 
 AGENT_LABELS = {
@@ -17,7 +18,10 @@ AGENT_LABELS = {
 def unsupported_node(state: WorkflowState) -> dict:
     route = state.get("route", "unsupported")
     rationale = state.get("route_rationale", "")
+    run_id = state.get("run_id")
     label = AGENT_LABELS.get(route, route)
+
+    emit("unsupported.start", run_id=run_id, route=route, label=label)
 
     if route in FUTURE_AGENTS:
         response = (
@@ -35,4 +39,5 @@ def unsupported_node(state: WorkflowState) -> dict:
             "or a go/no-go decision."
         )
 
+    emit("unsupported.response", run_id=run_id, response=response)
     return {"final_response": response}

@@ -14,6 +14,7 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from foundry.config import Settings, get_settings
+from foundry.progress import emit
 
 logger = logging.getLogger(__name__)
 
@@ -96,11 +97,28 @@ def get_research_provider(settings: Settings | None = None) -> ResearchProvider:
     )
 
 
-def build_research_tool(provider: ResearchProvider | None = None) -> StructuredTool:
+def build_research_tool(
+    provider: ResearchProvider | None = None,
+    *,
+    run_id: str | None = None,
+) -> StructuredTool:
     provider = provider or get_research_provider()
 
     def _run(query: str) -> str:
-        return provider.research(query)
+        emit(
+            "research.start",
+            run_id=run_id,
+            provider=provider.name,
+            query=query,
+        )
+        answer = provider.research(query)
+        emit(
+            "research.answer",
+            run_id=run_id,
+            provider=provider.name,
+            answer=answer,
+        )
+        return answer
 
     return StructuredTool.from_function(
         func=_run,

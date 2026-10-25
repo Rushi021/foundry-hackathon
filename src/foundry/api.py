@@ -39,7 +39,12 @@ def health() -> dict[str, str]:
 @app.post("/v1/workflows/run", response_model=RunResponse)
 def run(request: RunRequest) -> RunResponse:
     try:
-        result = run_workflow(request.prompt, user_context=request.user_context)
+        # verbose=True prints each step to the API server terminal for verification
+        result = run_workflow(
+            request.prompt,
+            user_context=request.user_context,
+            verbose=True,
+        )
     except Exception as exc:  # noqa: BLE001 — surface as 500 for POC
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return RunResponse(**result)

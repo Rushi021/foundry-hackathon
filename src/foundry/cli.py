@@ -1,4 +1,4 @@
-"""CLI smoke-test entrypoint."""
+"""CLI smoke-test entrypoint with live per-step terminal output."""
 
 from __future__ import annotations
 
@@ -18,7 +18,16 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional user_context (future persistent brain hook)",
     )
-    parser.add_argument("--json", action="store_true", help="Print raw JSON result")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print final result as JSON after the live step stream",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress live per-step terminal output",
+    )
     args = parser.parse_args(argv)
 
     if not args.prompt:
@@ -26,15 +35,26 @@ def main(argv: list[str] | None = None) -> int:
 
     from foundry.graph import run_workflow
 
-    result = run_workflow(args.prompt, user_context=args.context)
+    result = run_workflow(
+        args.prompt,
+        user_context=args.context,
+        verbose=not args.quiet,
+    )
+
     if args.json:
         print(json.dumps(result, indent=2))
-    else:
+    elif args.quiet:
         print(f"route: {result['route']} ({result.get('route_confidence')})")
         print(f"why:   {result.get('route_rationale')}")
         print(f"run:   {result['run_id']} ({result['latency_ms']} ms)")
         print("---")
         print(result["response"])
+    else:
+        print("---")
+        print(
+            f"done run={result['run_id']} route={result['route']} "
+            f"latency_ms={result['latency_ms']}"
+        )
     return 0
 
 

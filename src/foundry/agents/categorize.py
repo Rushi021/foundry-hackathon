@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from foundry.config import get_settings
 from foundry.llm import get_chat_model
+from foundry.progress import emit
 from foundry.state import RouteDecision, WorkflowState
 
 CATEGORIZE_SYSTEM = """You are the Chief of Agents for Foundry, an AI consultancy.
@@ -28,6 +29,7 @@ Return structured output only.
 
 def categorize_node(state: WorkflowState) -> dict:
     settings = get_settings()
+    run_id = state.get("run_id")
     model = get_chat_model(settings.categorize_llm, temperature=0).with_structured_output(
         RouteDecision
     )
@@ -38,11 +40,19 @@ def categorize_node(state: WorkflowState) -> dict:
     if context:
         user_content = f"User context (persistent brain):\n{context}\n\nPrompt:\n{prompt}"
 
+    emit("categorize.start", run_id=run_id, model=settings.categorize_llm)
     decision: RouteDecision = model.invoke(
         [
             SystemMessage(content=CATEGORIZE_SYSTEM),
             HumanMessage(content=user_content),
         ]
+    )
+    emit(
+        "categorize.decision",
+        run_id=run_id,
+        route=decision.route,
+        confidence=decision.confidence,
+        rationale=decision.rationale,
     )
 
     return {

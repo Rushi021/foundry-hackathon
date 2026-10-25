@@ -7,13 +7,14 @@ from langgraph.prebuilt import ToolNode
 
 from foundry.config import get_settings
 from foundry.llm import get_chat_model
+from foundry.progress import emit
 from foundry.state import WorkflowState
 from foundry.tools.research import build_research_tool
 
 FOUNDER_SYSTEM = """You are the user's co-founder inside Foundry — not a cheerleader, not a chatbot.
 
 Rules:
-- Have your own opinions. Push back, negate, or refine when the idea is weak, crowded, vague, or poorly scoped.
+- Have your own opinions. Push back, negate, or refine when the idea is weak, crowded, or poorly scoped.
 - Never sugarcoat. Empty praise is a failure mode.
 - When the idea has legs, brainstorm hard and be concrete about next moves.
 - Use the `research` tool when you need market/competitor/factual grounding. Do not invent stats.
@@ -32,7 +33,8 @@ MAX_TOOL_ROUNDS = 4
 
 def founder_node(state: WorkflowState) -> dict:
     settings = get_settings()
-    research = build_research_tool()
+    run_id = state.get("run_id")
+    research = build_research_tool(run_id=run_id)
     tools = [research]
     model = get_chat_model(settings.founder_llm, temperature=0.4).bind_tools(tools)
     tool_node = ToolNode(tools)
@@ -42,19 +44,39 @@ def founder_node(state: WorkflowState) -> dict:
     if context:
         system += f"\n\nPersistent user/company context:\n{context}"
 
+    emit("founder.start", run_id=run_id, model=settings.founder_llm)
     messages: list = [SystemMessage(content=system), HumanMessage(content=state["user_prompt"])]
 
-    for _ in range(MAX_TOOL_ROUNDS):
+    for round_idx in range(MAX_TOOL_ROUNDS):
+        emit("founder.llm", run_id=run_id, round=round_idx + 1)
         ai: AIMessage = model.invoke(messages)
         messages.append(ai)
         if not getattr(ai, "tool_calls", None):
-            return {"final_response": _message_text(ai), "messages": messages[1:]}
+            text = _message_text(ai)
+            emit("founder.response", run_id=run_id, response=text)
+            return {"final_response": text, "messages": messages[1:]}
+
+        for call in ai.tool_calls:
+            emit(
+                "founder.tool_call",
+                run_id=run_id,
+                tool=call.get("name"),
+                args=call.get("args"),
+            )
 
         tool_result = tool_node.invoke({"messages": [ai]})
         tool_messages = tool_result["messages"]
+        for tm in tool_messages:
+            if isinstance(tm, ToolMessage):
+                emit(
+                    "founder.tool_result",
+                    run_id=run_id,
+                    tool=getattr(tm, "name", None),
+                    result=_message_text(tm),
+                )
         messages.extend(tool_messages)
 
-    # Force a closing answer without tools if we hit the cap
+    emit("founder.force_close", run_id=run_id, reason="max_tool_rounds")
     closing = get_chat_model(settings.founder_llm, temperature=0.4).invoke(
         messages
         + [
@@ -64,7 +86,9 @@ def founder_node(state: WorkflowState) -> dict:
         ]
     )
     messages.append(closing)
-    return {"final_response": _message_text(closing), "messages": messages[1:]}
+    text = _message_text(closing)
+    emit("founder.response", run_id=run_id, response=text)
+    return {"final_response": text, "messages": messages[1:]}
 
 
 def _message_text(message: AIMessage | ToolMessage) -> str:
