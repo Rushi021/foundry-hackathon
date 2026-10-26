@@ -154,7 +154,7 @@ def exchange_code(
         "code_verifier": code_verifier,
         "resource": RESOURCE,
     }
-    with httpx.Client(timeout=60.0) as client:
+    with httpx.Client(timeout=60.0, trust_env=False) as client:
         res = client.post(TOKEN_URL, data=data)
     if res.status_code != 200:
         raise RuntimeError(
@@ -173,7 +173,7 @@ def refresh_tokens(creds: ChatGPTCredentials) -> ChatGPTCredentials:
         "client_id": creds.client_id,
         "resource": RESOURCE,
     }
-    with httpx.Client(timeout=60.0) as client:
+    with httpx.Client(timeout=60.0, trust_env=False) as client:
         res = client.post(TOKEN_URL, data=data)
     if res.status_code != 200:
         raise RuntimeError(
@@ -240,7 +240,7 @@ def _parse_scopes(scope_value: str) -> list[str]:
 
 def _revocation_endpoint() -> str | None:
     try:
-        with httpx.Client(timeout=30.0) as client:
+        with httpx.Client(timeout=30.0, trust_env=False) as client:
             res = client.get(OPENID_CONFIGURATION_URL)
         if res.status_code != 200:
             return None
@@ -259,7 +259,7 @@ def revoke_refresh_token(creds: ChatGPTCredentials) -> bool:
         "token_type_hint": "refresh_token",
         "client_id": creds.client_id,
     }
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=30.0, trust_env=False) as client:
         res = client.post(endpoint, data=data)
     return res.status_code == 200
 

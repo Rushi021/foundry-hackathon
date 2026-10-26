@@ -17,7 +17,8 @@ def list_models(*, visibility: str = "list") -> list[dict[str, Any]]:
     Each item: ``{slug, display_name, …}`` preserving server order.
     """
     token = get_valid_access_token()
-    with httpx.Client(timeout=60.0) as client:
+    # trust_env=False avoids local HTTP(S)_PROXY intercepts that 403 api.openai.com
+    with httpx.Client(timeout=60.0, trust_env=False) as client:
         res = client.get(
             f"{API_BASE}/models",
             headers={"Authorization": f"Bearer {token}"},

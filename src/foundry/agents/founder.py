@@ -44,7 +44,8 @@ def founder_node(state: WorkflowState) -> dict:
     if context:
         system += f"\n\nPersistent user/company context:\n{context}"
 
-    emit("founder.start", run_id=run_id, model=settings.founder_llm)
+    resolved = getattr(model, "model_name", None) or settings.founder_llm
+    emit("founder.start", run_id=run_id, model=resolved)
     messages: list = [SystemMessage(content=system), HumanMessage(content=state["user_prompt"])]
 
     for round_idx in range(MAX_TOOL_ROUNDS):

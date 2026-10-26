@@ -121,6 +121,15 @@ def test_chatgpt_plan_ready_false_without_scope(tmp_path: Path, monkeypatch: pyt
     assert chatgpt_plan_ready() is False
 
 
+def test_resolve_chatgpt_model_maps_api_ids():
+    from foundry.llm import resolve_chatgpt_model
+
+    assert resolve_chatgpt_model("gpt-4o-mini") == "gpt-5.6-luna"
+    assert resolve_chatgpt_model("gpt-4o") == "gpt-6.1-sol"
+    assert resolve_chatgpt_model("gpt-5.6-luna") == "gpt-5.6-luna"
+    assert resolve_chatgpt_model("gpt-6.1-sol") == "gpt-6.1-sol"
+
+
 def test_get_chat_model_uses_responses_when_plan_ready(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -145,8 +154,8 @@ def test_get_chat_model_uses_responses_when_plan_ready(
 
     from foundry.llm import get_chat_model
 
-    model = get_chat_model("openai:gpt-test")
-    assert model.model_name == "gpt-test"
+    model = get_chat_model("openai:gpt-4o-mini")
+    assert model.model_name == "gpt-5.6-luna"
     assert model.use_responses_api is True
     assert model.store is False
     assert model.streaming is True

@@ -12,6 +12,21 @@ from langchain_core.messages import ChatMessage, SystemMessage
 
 from foundry.chatgpt_auth.store import load_active_credentials
 
+# ChatGPT plan usage (SIWC) rejects standard API Completions model IDs.
+# Account catalog uses plan slugs (e.g. gpt-5.6-luna, gpt-6.1-sol).
+_CHATGPT_FAST_DEFAULT = "gpt-5.6-luna"
+_CHATGPT_STRONG_DEFAULT = "gpt-6.1-sol"
+
+# Names commonly set for OPENAI_API_KEY billing that fail on the plan-usage route.
+_API_KEY_MODEL_PREFIXES = (
+    "gpt-3.5",
+    "gpt-4",
+    "gpt-4o",
+    "o1",
+    "o3",
+    "o4",
+)
+
 
 def chatgpt_plan_ready() -> bool:
     """True when a local ChatGPT session has subscription-sharing permission."""
@@ -21,6 +36,22 @@ def chatgpt_plan_ready() -> bool:
         and (creds.access_token or creds.refresh_token)
         and creds.plan_usage_enabled()
     )
+
+
+def resolve_chatgpt_model(model: str) -> str:
+    """
+    Map API-key model IDs to ChatGPT plan catalog slugs.
+
+    ``gpt-4o-mini`` / ``gpt-4o`` etc. are not valid on the subscription-sharing
+    Responses route and return ``model_not_found``.
+    """
+    lowered = model.strip().lower()
+    if any(lowered == p or lowered.startswith(p + "-") or lowered.startswith(p)
+           for p in _API_KEY_MODEL_PREFIXES):
+        if any(tag in lowered for tag in ("mini", "nano", "small")):
+            return _CHATGPT_FAST_DEFAULT
+        return _CHATGPT_STRONG_DEFAULT
+    return model
 
 
 def get_chat_model(model_spec: str, *, temperature: float = 0.2) -> BaseChatModel:
@@ -49,7 +80,7 @@ def get_chat_model(model_spec: str, *, temperature: float = 0.2) -> BaseChatMode
         and (billing == "chatgpt" or chatgpt_plan_ready())
     )
     if use_chatgpt:
-        return _chatgpt_responses_model(model)
+        return _chatgpt_responses_model(resolve_chatgpt_model(model))
 
     return init_chat_model(model_spec, temperature=temperature)
 

@@ -11,8 +11,10 @@ class Settings(BaseSettings):
     )
 
     # LLM: "provider:model" — swap without code changes
-    categorize_llm: str = "openai:gpt-4o-mini"
-    founder_llm: str = "openai:gpt-4o"
+    # Defaults target ChatGPT plan catalog slugs (SIWC). For API-key billing,
+    # set openai:gpt-4o-mini / openai:gpt-4o (or any Completions model you pay for).
+    categorize_llm: str = "openai:gpt-5.6-luna"
+    founder_llm: str = "openai:gpt-6.1-sol"
     # auto | chatgpt | api_key — prefer Sign in with ChatGPT plan usage when signed in
     foundry_llm_billing: str = "auto"
 
