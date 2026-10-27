@@ -16,6 +16,9 @@ Thumbs.db
 .env.*
 !.env.example
 
+# Local sessions + memory (may contain private user data)
+.foundry/
+
 # Dependencies / build (common)
 node_modules/
 dist/

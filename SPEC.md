@@ -1,32 +1,27 @@
-# Spec: Foundry — Founder Workflow Foundation
+# Spec: Foundry — Phase 1 Intelligence & Communication Foundation
 
 ## Objective
 
-Build the first vertical slice of **Foundry**: an AI consultancy platform where solo founders can delegate work to specialized agents that share context and work with real opinions (not sycophancy).
+Foundry is an AI company for solo founders: specialized agents with clear responsibilities,
+authorized tools, shared knowledge, and the ability to coordinate. Phase 1 establishes the
+foundation: understand a request in conversational context, route it with a dedicated
+decision model, give the selected agent only the memory and tools it is authorized for,
+execute (delegating when needed), and return one honest result.
 
-**This slice:** a LangGraph-orchestrated workflow with:
-
-1. **Chief of Agents (categorization)** — classifies the user prompt and routes to the right specialist workflow.
-2. **Founder agent (co-founder)** — the only specialist implemented now. Acts as a real co-founder: challenges, counters, brainstorms; never sugarcoats. Can run web research (Perplexity-like) when evidence is needed.
-3. **Observability + persistence hooks** — LangSmith tracing and Supabase-ready run logging.
-
-**Out of scope for this slice:** lawyer, sales/marketing, GTM, engineer, personal assistant agents; multi-user auth; product UI; full long-term memory/RAG of user company context.
-
-### User stories
-
-- As a solo founder, I submit a prompt (idea, decision, critique request) and get routed to the Founder agent when it’s a strategy/idea/co-founder conversation.
-- As a solo founder, I get a direct, opinionated response that can cite research when claims need grounding.
-- As a builder, I can run the workflow from a CLI with ChatGPT plan usage (`foundry login`) or env-configured API keys, and see traces in LangSmith.
+Simple requests stay simple; sophisticated multi-agent work remains possible.
 
 ### Success criteria
 
-- [ ] `POST /v1/workflows/run` with `{ "prompt": "..." }` runs end-to-end (FastAPI).
-- [ ] `python -m foundry.cli "Should I build X for Y?"` also works.
-- [ ] Categorization returns a structured route with rationale; `founder` is fully handled; other known agents stubbed.
-- [ ] Founder agent can call answer-only research (Perplexity by default) and never sugarcoats.
-- [ ] LLM factory is provider-agnostic (`CATEGORIZE_LLM` / `FOUNDER_LLM` env as `provider:model`).
-- [ ] LangSmith traces when tracing env is set; Supabase logs when configured, else soft no-op.
-- [ ] State includes optional `user_context` hook for a future persistent brain (empty/unused in v0).
+- [x] Requests are routed by Jev (TypeSafe AI decision model); the LLM router is a flagged fallback only.
+- [x] One Jev call returns destination, complexity, tool hint, memory relevance and clarification need.
+- [x] Follow-ups keep conversational context (sessions); no automatic long-term memory retrieval.
+- [x] Uncertain routing goes to context resolution once, then falls back to the Direct Assistant — no loops.
+- [x] Direct Assistant, Co-Founder, COO, Research, Engineering, Marketing run through one registry-driven runtime.
+- [x] Private Memory is readable only by the Co-Founder, enforced in code; leaks via delegation are blocked.
+- [x] Delegation returns results to the requesting agent; cycles and depth are bounded.
+- [x] Task status is derived from evidence; failures are never reported as success.
+- [x] Per-run metrics: router provider/fallback, decision + model calls, tokens, tools, delegations, memory reads/denials, failures, latency.
+- [x] New agents/tools are registry entries; the graph does not change.
 
 ---
 
@@ -36,34 +31,27 @@ Build the first vertical slice of **Foundry**: an AI consultancy platform where 
 |-------|--------|
 | Language | Python 3.11+ |
 | Orchestration | LangGraph (`StateGraph`) |
-| LLM | Provider-agnostic via `langchain.chat_models.init_chat_model` (`provider:model`). Default OpenAI (`openai:gpt-4o-mini` categorize, `openai:gpt-4o` founder) |
-| Research | Answer-only research provider (default: Perplexity Sonar). Abstract interface so users can later connect other apps. Returns the answer — not a DIY search/browse workflow. |
-| API | FastAPI (`POST /v1/workflows/run`) — primary interface for web/other clients; CLI also available |
-| Observability | LangSmith (`LANGCHAIN_*` env vars) |
-| Database | Supabase (Postgres) — `workflow_runs` table for logs/analytics |
-| Packaging | `pyproject.toml` + `uv`/`pip` |
+| Decision router | Jev via `POST https://api.typesafe.ai/v1/systemone` (`TYPESAFE_API_KEY`) |
+| LLM | Provider-agnostic `provider:model` via `init_chat_model`; ChatGPT plan usage (SIWC) or API key |
+| Research | Answer-only provider (default Perplexity Sonar) exposed as the `web_search` tool |
+| Memory / sessions | JSON files under `FOUNDRY_DATA_DIR` (default `.foundry/`, gitignored) |
+| API | FastAPI; CLI for local use |
+| Observability | Terminal step stream, run metrics, LangSmith, Supabase `workflow_runs` (optional) |
 
 ---
 
 ## Commands
 
 ```bash
-# Setup
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env   # fill keys
+cp .env.example .env   # set TYPESAFE_API_KEY for Jev routing
 
-# API (primary)
-uvicorn foundry.api:app --reload --port 8000
-
-# CLI
-python -m foundry.cli "Your prompt here"
-
-# Tests
-pytest
-
-# Lint (optional)
-ruff check .
+uvicorn foundry.api:app --reload --port 8000   # API
+foundry run "Your prompt" [--session ID]       # one request
+foundry chat                                   # interactive session
+foundry memory add --scope private|shared "…"  # user-owned memory
+pytest                                         # tests (no network)
 ```
 
 ---
@@ -71,128 +59,92 @@ ruff check .
 ## Project Structure
 
 ```text
-foundry-hackathon/
-├── SPEC.md
-├── README.md
-├── pyproject.toml
-├── .env.example
-├── supabase/
-│   └── migrations/001_workflow_runs.sql
-├── src/foundry/
-│   ├── __init__.py
-│   ├── api.py                 # FastAPI app
-│   ├── cli.py                 # CLI entrypoint
-│   ├── config.py              # env settings
-│   ├── llm.py                 # provider-agnostic chat model factory (API key or ChatGPT OAuth)
-│   ├── chatgpt_auth/          # Sign in with ChatGPT (PKCE + plan usage → Responses API)
-│   ├── state.py               # shared LangGraph state (+ future user_context)
-│   ├── graph.py               # StateGraph: categorize → route → founder|unsupported
-│   ├── agents/
-│   │   ├── categorize.py      # Chief of Agents
-│   │   ├── founder.py         # Co-founder + research tool
-│   │   └── unsupported.py     # stub for future agents
-│   ├── tools/
-│   │   └── research.py        # ResearchProvider protocol + Perplexity default
-│   └── persistence/
-│       └── supabase_logger.py # run logging (optional if unset)
-└── tests/
-    ├── test_categorize.py
-    ├── test_research.py
-    └── test_graph_routing.py
+src/foundry/
+├── api.py / cli.py          # ingestion: POST /v1/workflows/run, /v1/memory; foundry run|chat|memory
+├── graph.py                 # prepare_context → route → resolve? → execute → finalize
+├── context.py               # sessions + context preparation (no model calls)
+├── routing/
+│   ├── models.py            # RoutingDecision, DecisionProvider protocol
+│   ├── jev.py               # Jev provider (choice + noul questions, one round trip)
+│   ├── llm_fallback.py      # LLM router, used only if Jev is unconfigured/fails
+│   └── policy.py            # thresholds → destination / resolve / fallback
+├── agents/
+│   ├── registry.py          # AgentSpec: responsibility, model, tools, memory scopes, delegation
+│   ├── prompts.py           # personas + status protocol
+│   └── resolver.py          # context resolution / clarifying question
+├── runtime.py               # agent loop: tools, approval gate, recall, delegate, escalate, status
+├── memory.py                # Private/Shared stores + access gateway + leak detection
+├── tools/                   # ToolSpec registry; web_search (Perplexity)
+├── metrics.py               # RunMetrics
+└── persistence/             # Supabase run log (soft no-op)
 ```
 
 ---
 
-## Architecture (this slice)
+## Workflow
 
 ```text
-User prompt
-    │
-    ▼
-┌─────────────────────┐
-│  Categorize (Chief) │  → route: founder | lawyer | sales | gtm | engineer | assistant | unsupported
-└─────────┬───────────┘
-          │
-          ├─ founder ──────────► Founder agent (tools: research) ──► response
-          │
-          └─ anything else ────► Unsupported stub (name future agent, ask to rephrase / wait)
+user message
+  → prepare_context   recent turns (≤6), earlier requests or existing summary, last agent
+  → route             Jev: destination · complexity · tool · needs_memory · needs_clarification
+      ├─ confident            → execute(destination)
+      ├─ uncertain/missing    → resolve (fast LLM, only on this path)
+      │     ├─ rewritten      → route again (once)
+      │     ├─ unchanged      → execute(destination if confident else direct)
+      │     └─ unresolved     → clarifying question (status needs_clarification)
+      └─ uncertain, no history, nothing missing → execute(direct)
+  → execute           run_agent(destination) — may escalate (Direct) or delegate
+  → finalize          persist turns, return result + metrics
 ```
 
-**State (shared):** `messages`, `user_prompt`, `route`, `route_rationale`, `run_id`, `final_response`.
+Router output is a recommendation. It never grants memory, tools, or actions.
 
----
+## Agents
 
-## Agent contracts
+| Agent | Role | Tools | Memory | Delegates / escalates to |
+|-------|------|-------|--------|---------------------------|
+| `direct` | Fast answers, concepts, current info | web_search; gmail, calendar (not connected) | shared | escalates: cofounder, coo, research |
+| `cofounder` | Strategy, opportunity evaluation, opinionated partner | web_search | **private**, shared | research, coo, engineering, marketing |
+| `coo` | Operational execution, workstreams, consolidation | — | shared | research, engineering, marketing, cofounder (strategic escalation) |
+| `research` | Evidence-based research | web_search | shared | — |
+| `engineering` | Requirements, plans, readiness (no code execution in Phase 1) | github (not connected) | shared | — |
+| `marketing` | Positioning, messaging, launch plans (draft only) | — | shared | — |
 
-### Categorize (Chief of Agents)
+Result flows: Direct → user; Specialist → user; Co-Founder → specialist → Co-Founder → user;
+COO → specialists → COO → user; Co-Founder → COO → specialists → COO → Co-Founder → user.
+Escalation hands the whole request over; the target answers the user.
 
-- **Input:** raw user prompt (+ optional future context blob).
-- **Output:** structured `{ route, rationale, confidence }`.
-- **Routes known today:** `founder` fully handled; others recognized for future wiring but stubbed.
-- **Heuristic:** strategy, idea validation, brainstorming, product direction, “be my co-founder” → `founder`.
+## Memory (basic)
 
-### Founder (Co-founder)
+- **Private:** user + Co-Founder only. `PRIVATE_MEMORY_AGENTS` is a hard-coded boundary that a
+  registry misconfiguration cannot widen.
+- **Shared:** any agent whose spec lists the scope.
+- **Retrieval:** preloaded for the top-level agent only when `needs_memory ≥ ROUTER_MEMORY_THRESHOLD`;
+  any agent may call `recall_memory` for its authorized scopes later. Keyword scoring.
+- **Leak guard:** delegation briefs to, and results from, private-authorized agents are checked
+  against private content surfaced in the run; matches are blocked.
+- **Writes:** user-initiated only (CLI/API). Autonomous memory curation is out of scope.
 
-- **Persona:** Equal partner. Own opinions. Push back when the idea is weak, crowded, or poorly scoped. Brainstorm when the idea has legs. Never empty praise.
-- **Tools:** `research(query)` — answer-only research via pluggable `ResearchProvider` (default Perplexity Sonar). Returns the researched answer string; does not expose a DIY browse/search workflow to the agent.
-- **When to research:** market size, competitors, claims that need evidence, “is this a thing” questions.
-- **Output:** structured co-founder reply: verdict posture (push / refine / pursue), key counters, suggested next moves, research notes if used.
+## Task results
 
----
-
-## Code Style
-
-```python
-# Prefer TypedDict / Pydantic models for graph I/O
-class RouteDecision(BaseModel):
-    route: Literal["founder", "lawyer", "sales", "gtm", "engineer", "assistant", "unsupported"]
-    rationale: str
-    confidence: float
-```
-
-- Package under `src/foundry`.
-- Env via pydantic-settings; no secrets in code.
-- Thin nodes: one file per agent; graph wires them.
-
----
-
-## Testing Strategy
-
-- **Unit:** categorization parsing / routing map with mocked LLM.
-- **Graph:** with mocked LLM + research tool, assert `founder` path produces `final_response`; non-founder path hits stub.
-- No live API calls in CI; optional manual smoke with real keys.
+`completed | partial | needs_clarification | awaiting_approval | failed`. The runtime takes the
+worse of the agent's declared status (`[[status:…]]` marker) and the derived status (tool
+errors, unresolved failed subtasks, pending approvals). Consequential tools are recorded as
+pending approvals and never executed in Phase 1.
 
 ---
 
 ## Boundaries
 
-- **Always:** keep secrets in `.env`; structured route output; founder system prompt forbids sugarcoating; fail soft if Supabase/Perplexity unset (clear warning).
-- **Ask first:** changing default research provider; adding new agent nodes; schema changes beyond `workflow_runs`; wiring the persistent brain.
-- **Never:** commit `.env` or API keys; pretend unimplemented agents work; invent research facts without calling the tool.
+- **Always:** keep secrets in `.env`; structured router output; enforce permissions in code;
+  report limitations (missing tools/keys) instead of pretending; fail soft if Supabase/Perplexity unset.
+- **Ask first:** changing default research or decision provider; schema changes beyond
+  `workflow_runs`; memory-writing policy; connecting consequential tools.
+- **Never:** commit `.env`, keys or `.foundry/`; let a non-Co-Founder agent read Private Memory;
+  report delegated or tool-issued work as completed without a result; invent research facts.
 
----
+## Out of scope (Phase 1)
 
-## Persistence (minimal)
-
-`workflow_runs` columns: `id`, `created_at`, `user_prompt`, `route`, `route_rationale`, `response`, `latency_ms`, `metadata` (jsonb).
-
-LangSmith remains the trace UI; Supabase is analytics/logs for the product.
-
----
-
-## Decisions (locked)
-
-1. **LLM:** OpenAI by default via Sign in with ChatGPT plan usage (OAuth + Responses API) when signed in; `OPENAI_API_KEY` remains a fallback. Factory is provider-agnostic (`provider:model`).
-2. **Research:** Default is Perplexity-like answer-only research (Perplexity Sonar API). Pluggable provider interface for future user-connected apps. Agent gets the answer, not a search workflow.
-3. **Invocation:** FastAPI is the primary interface; CLI remains for local smoke tests.
-4. **User context / brain:** Persistent company brain is planned separately. v0 leaves an optional `user_context` field in state but does not implement the brain.
-
----
-
-## Assumptions (confirmed)
-
-1. Default OpenAI models; default Perplexity for research answers.
-2. FastAPI + CLI; web UI later.
-3. Supabase optional at runtime (schema shipped; skip if env missing).
-4. Only `founder` fully implemented; other routes stubbed for the future.
-5. No auth / multi-tenancy yet.
+Autonomous software development and deployment, long-running scheduling, autonomous memory
+curation, connected Gmail/Calendar/GitHub actions, voice transport (the ingestion path takes
+text; a voice front-end would transcribe into the same `run_workflow` call), multi-user auth.

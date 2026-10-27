@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from foundry.config import Settings, get_settings
 from foundry.progress import emit
+from foundry.tools.base import ToolError
 
 logger = logging.getLogger(__name__)
 
@@ -101,10 +102,16 @@ def build_research_tool(
     provider: ResearchProvider | None = None,
     *,
     run_id: str | None = None,
+    cache: dict[str, str] | None = None,
 ) -> StructuredTool:
+    """``web_search`` tool. ``cache`` dedupes identical queries within a run."""
     provider = provider or get_research_provider()
 
     def _run(query: str) -> str:
+        key = " ".join(query.lower().split())
+        if cache is not None and key in cache:
+            emit("research.cache_hit", run_id=run_id, query=query)
+            return cache[key]
         emit(
             "research.start",
             run_id=run_id,
@@ -118,15 +125,19 @@ def build_research_tool(
             provider=provider.name,
             answer=answer,
         )
+        if provider.name == UnavailableResearchProvider.name:
+            raise ToolError(answer)
+        if cache is not None:
+            cache[key] = answer
         return answer
 
     return StructuredTool.from_function(
         func=_run,
-        name="research",
+        name="web_search",
         description=(
-            "Get a grounded research answer for a specific question "
-            "(market, competitors, facts). Returns the answer only — "
-            "use when you need evidence, not vibes."
+            "Get a grounded, current answer for a specific question "
+            "(news, market, competitors, facts). Returns the answer only — "
+            "use when you need evidence or current information, not vibes."
         ),
         args_schema=ResearchQuery,
     )

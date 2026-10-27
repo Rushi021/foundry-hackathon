@@ -1,4 +1,4 @@
-"""CLI — ChatGPT login + founder workflow smoke tests."""
+"""CLI — ChatGPT login, workflow runs, interactive chat, and memory management."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import sys
 
 from dotenv import load_dotenv
 
-_AUTH_COMMANDS = frozenset({"login", "logout", "auth", "models", "run"})
+_AUTH_COMMANDS = frozenset({"login", "logout", "auth", "models", "run", "chat", "memory"})
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -54,12 +54,12 @@ def main(argv: list[str] | None = None) -> int:
         help="List models available to the signed-in ChatGPT account",
     )
 
-    run_p = sub.add_parser("run", help="Run the founder workflow")
+    run_p = sub.add_parser("run", help="Run one request through the workflow")
     run_p.add_argument("prompt", help="User prompt")
     run_p.add_argument(
-        "--context",
+        "--session",
         default=None,
-        help="Optional user_context (future persistent brain hook)",
+        help="Conversation id to continue (printed after each run)",
     )
     run_p.add_argument(
         "--json",
@@ -71,6 +71,23 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Suppress live per-step terminal output",
     )
+
+    chat_p = sub.add_parser("chat", help="Interactive conversation (keeps session context)")
+    chat_p.add_argument("--session", default=None, help="Conversation id to resume")
+    chat_p.add_argument("--quiet", action="store_true", help="Hide live step output")
+
+    mem_p = sub.add_parser("memory", help="Manage your long-term memory")
+    mem_sub = mem_p.add_subparsers(dest="memory_command", required=True)
+    mem_add = mem_sub.add_parser("add", help="Store a memory")
+    mem_add.add_argument("content")
+    mem_add.add_argument(
+        "--scope",
+        choices=["private", "shared"],
+        default="shared",
+        help="private: only you and the Co-Founder; shared: all authorized agents",
+    )
+    mem_list = mem_sub.add_parser("list", help="List memories")
+    mem_list.add_argument("--scope", choices=["private", "shared"], default="shared")
 
     args = parser.parse_args(raw)
 
@@ -103,22 +120,24 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{m['slug']}\t{m['display_name']}")
         return 0
 
+    if args.command == "memory":
+        return _memory(args)
+
+    if not _llm_ready():
+        return 1
+
+    if args.command == "chat":
+        return _chat(session_id=args.session, quiet=args.quiet)
+
     return _run_workflow(
         args.prompt,
-        context=args.context,
+        session_id=args.session,
         as_json=args.json,
         quiet=args.quiet,
     )
 
 
-def _run_workflow(
-    prompt: str,
-    *,
-    context: str | None,
-    as_json: bool,
-    quiet: bool,
-) -> int:
-    from foundry.graph import run_workflow
+def _llm_ready() -> bool:
     from foundry.llm import chatgpt_plan_ready
 
     if not chatgpt_plan_ready() and not os.environ.get("OPENAI_API_KEY"):
@@ -127,28 +146,68 @@ def _run_workflow(
             "or set OPENAI_API_KEY.",
             file=sys.stderr,
         )
-        return 1
+        return False
+    return True
 
-    result = run_workflow(
-        prompt,
-        user_context=context,
-        verbose=not quiet,
+
+def _memory(args: argparse.Namespace) -> int:
+    from foundry.config import get_settings
+    from foundry.memory import MemoryStore
+
+    store = MemoryStore(get_settings().foundry_data_dir)
+    if args.memory_command == "add":
+        item = store.add(args.scope, args.content)
+        print(f"stored {item.scope} memory {item.id}")
+    else:
+        for item in store.list(args.scope):
+            print(f"{item.id}\t{item.created_at}\t{item.content}")
+    return 0
+
+
+def _print_result(result: dict) -> None:
+    print("---")
+    print(result["response"])
+    print("---")
+    print(
+        f"agent={result['route']} status={result['status']} session={result['session_id']} "
+        f"latency_ms={result['latency_ms']} model_calls={result['metrics']['model_calls']}"
     )
+
+
+def _run_workflow(
+    prompt: str,
+    *,
+    session_id: str | None,
+    as_json: bool,
+    quiet: bool,
+) -> int:
+    from foundry.graph import run_workflow
+
+    result = run_workflow(prompt, session_id=session_id, verbose=not quiet)
 
     if as_json:
         print(json.dumps(result, indent=2))
-    elif quiet:
-        print(f"route: {result['route']} ({result.get('route_confidence')})")
-        print(f"why:   {result.get('route_rationale')}")
-        print(f"run:   {result['run_id']} ({result['latency_ms']} ms)")
-        print("---")
-        print(result["response"])
     else:
-        print("---")
-        print(
-            f"done run={result['run_id']} route={result['route']} "
-            f"latency_ms={result['latency_ms']}"
-        )
+        _print_result(result)
+    return 0 if result["status"] != "failed" else 2
+
+
+def _chat(*, session_id: str | None, quiet: bool) -> int:
+    from foundry.graph import run_workflow
+
+    print("Foundry chat — empty line or Ctrl-D to exit.")
+    while True:
+        try:
+            prompt = input("\nyou> ").strip()
+        except EOFError:
+            break
+        if not prompt:
+            break
+        result = run_workflow(prompt, session_id=session_id, verbose=not quiet)
+        session_id = result["session_id"]
+        _print_result(result)
+    if session_id:
+        print(f"\nresume with: foundry chat --session {session_id}")
     return 0
 
 
